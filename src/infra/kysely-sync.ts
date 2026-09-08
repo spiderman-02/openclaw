@@ -56,6 +56,11 @@ export function sqliteStringSet(values: readonly string[]): RawBuilder<string> {
   return kyselySql<string>`(SELECT value FROM json_each(${encoded}))`;
 }
 
+/** Decode TEXT projected as BLOB so affected node:sqlite builds cannot stop at embedded NUL. */
+export function decodeSqliteTextBytes(value: Uint8Array): string {
+  return Buffer.from(value).toString("utf8");
+}
+
 function reportNodeSqliteKyselyQueryError(db: DatabaseSync, error: unknown): void {
   try {
     queryErrorHandlerByDatabase.get(db)?.(error);

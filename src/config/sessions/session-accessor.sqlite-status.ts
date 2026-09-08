@@ -60,6 +60,40 @@ export function selectSessionEntryRows(
     );
 }
 
+export function selectLosslessSessionEntryRows(
+  database: Pick<OpenClawAgentDatabase, "db">,
+  projection: "full" | "list",
+  fullEntryKeys: readonly string[] = [],
+) {
+  const metadata = fullEntryKeys.length
+    ? /* kysely-allow-raw: one row snapshot preserves complete selected entries beside sibling metadata. */ sql<string>`CASE WHEN session_key IN ${sqliteStringSet(fullEntryKeys)} THEN entry_json ELSE ${sessionEntryMetadataJson.expression} END`
+    : /* kysely-allow-raw: reuse the bounded metadata projection without changing parser semantics. */ sql<string>`${sessionEntryMetadataJson.expression}`;
+  const projectedEntryJson =
+    projection === "full"
+      ? /* kysely-allow-raw: select the trusted session JSON column for a full snapshot. */ sql<string>`entry_json`
+      : metadata;
+  return (
+    getNodeSqliteKysely<SessionStatusDatabase>(database.db)
+      .selectFrom("session_nodes")
+      .select("session_key")
+      // Preserve the exact parser input on node:sqlite builds that truncate TEXT at NUL.
+      .select(
+        /* kysely-allow-raw: preserve exact projected session JSON bytes on affected node:sqlite builds. */ sql<Uint8Array>`CAST(${projectedEntryJson} AS BLOB)`.as(
+          "entry_json_bytes",
+        ),
+      )
+      .$if(hasSqliteSessionOwnerColumns(database.db), (query) =>
+        query.select([
+          "owner_actor_type",
+          "owner_actor_id",
+          "owner_assigned_by_type",
+          "owner_assigned_by_id",
+          "owner_assigned_at",
+        ]),
+      )
+  );
+}
+
 // Canonical writers settle entry_valid; raw writes clear it. Inventory readers need
 // no payload for settled rows, but must retain parser semantics for pending/retained rows.
 export const sessionEntryInventoryJson =

@@ -1,5 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
-import { executeSqliteQuerySync, iterateSqliteQuerySync } from "../../infra/kysely-sync.js";
+import {
+  decodeSqliteTextBytes,
+  executeSqliteQuerySync,
+  iterateSqliteQuerySync,
+} from "../../infra/kysely-sync.js";
 import { readSqliteDataVersion } from "../../infra/node-sqlite.js";
 import {
   deferOpenClawAgentPostCommitPublication,
@@ -11,7 +15,10 @@ import {
   projectSqliteSessionParticipantsBatch,
 } from "./session-accessor.sqlite-participant-projection.js";
 import { getSessionKysely } from "./session-accessor.sqlite-scope.js";
-import { parseSessionEntryJson, selectSessionEntryRows } from "./session-accessor.sqlite-status.js";
+import {
+  parseSessionEntryJson,
+  selectLosslessSessionEntryRows,
+} from "./session-accessor.sqlite-status.js";
 import {
   assertCanonicalSqliteSessionKeysCurrent,
   type ValidatedSessionMetadata,
@@ -139,13 +146,13 @@ function loadSessionEntrySnapshot(
   if (!metadata) {
     for (const row of iterateSqliteQuerySync(
       database.db,
-      selectSessionEntryRows(database, projection, fullEntryKeys ? [...fullEntryKeys] : [])
+      selectLosslessSessionEntryRows(database, projection, fullEntryKeys ? [...fullEntryKeys] : [])
         .select("updated_at")
         .orderBy("session_key"),
     )) {
       keys.push(row.session_key);
       const entry = parseSessionEntryJson(
-        row,
+        { ...row, entry_json: decodeSqliteTextBytes(row.entry_json_bytes) },
         fullEntryKeys?.has(row.session_key) ? "full" : projection,
       );
       if (entry) {
